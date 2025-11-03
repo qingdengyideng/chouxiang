@@ -2659,7 +2659,7 @@
         // 设置WebSocket
         function setupWebSocket() {
 
-            socket = new WebSocket('ws://guanxi.icu:8000/ws');
+            socket = new WebSocket('wss://guanxi.icu/ws');
             socket.addEventListener('open', (event) => {
                 console.log('WebSocket连接已建立');
             });
