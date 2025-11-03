@@ -2203,7 +2203,7 @@
 
             // 实际API调用代码
 
-            fetch('http://175.178.29.106/webhook/n8n/add', {
+            fetch('https://175.178.29.106/webhook/n8n/add', {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json'
@@ -2247,7 +2247,7 @@
 
         // 获取数据（模拟）
         function fetchData() {
-            fetch('http://175.178.29.106/webhook/n8n/query')
+            fetch('https://175.178.29.106/webhook/n8n/query')
                 .then(response => response.json())
                 .then(data => {
                     renderTable(data);
@@ -2394,7 +2394,7 @@
         // 显示成功页
         function showSuccessPage(uid) {
             // 实际项目中应调用真实API
-            fetch(`http://175.178.29.106/webhook/n8n/query?uid=${uid}`)
+            fetch(`https://175.178.29.106/webhook/n8n/query?uid=${uid}`)
                 .then(response => response.json())
                 .then(data => {
                     if (data.length > 0) {
@@ -2440,7 +2440,7 @@
         // 显示失败页
         function showFailPage(uid, msg) {
             // 实际项目中应调用真实API
-            fetch(`http://175.178.29.106/webhook/n8n/query?uid=${uid}`)
+            fetch(`https://175.178.29.106/webhook/n8n/query?uid=${uid}`)
                 .then(response => response.json())
                 .then(data => {
                     renderFailPage(data[0], msg);
@@ -2530,7 +2530,7 @@
 
         // 异步加载用户标签
         function loadUserTags() {
-            fetch(`http://175.178.29.106/webhook/n8n/tag/query`)
+            fetch(`https://175.178.29.106/webhook/n8n/tag/query`)
                 .then(response => response.json())
                 .then(tags => {
                     // 按UID分组标签
@@ -2659,7 +2659,7 @@
         // 设置WebSocket
         function setupWebSocket() {
 
-            socket = new WebSocket('ws://175.178.29.106:8000/ws');
+            socket = new WebSocket('wss://175.178.29.106:8000/ws');
             socket.addEventListener('open', (event) => {
                 console.log('WebSocket连接已建立');
             });
@@ -2932,7 +2932,7 @@
         // 异步获取表情数据
         async function fetchEmojiData() {
             try {
-                const response = await fetch('http://175.178.29.106/webhook/n8n/emojiQuery');
+                const response = await fetch('https://175.178.29.106/webhook/n8n/emojiQuery');
                 if (!response.ok) throw new Error('Network response was not ok');
                 return await response.json();
             } catch (error) {
@@ -3058,7 +3058,7 @@
                 emojiFetchLock[group] = true;
 
                 try {
-                    const response = await fetch('http://175.178.29.106:5678/webhook/queryByGroup?group=test');
+                    const response = await fetch('https://175.178.29.106:5678/webhook/queryByGroup?group=test');
                     const data = await response.json();
                     await renderEmojiGroup(data);
                 } catch (err) {
@@ -3328,7 +3328,7 @@
 
         // 获取临时凭证
         function getStsToken() {
-            return fetch('http://175.178.29.106:8001/sts-token')
+            return fetch('https://175.178.29.106:8001/sts-token')
                 .then(response => response.json())
                 .then(data => {
                     if (data.code !== 0) throw new Error('获取凭证失败');
@@ -3395,7 +3395,7 @@
 
         // 提交表情 URL 到后端
         function submitEmojiUrl(url) {
-            return fetch('http://175.178.29.106/webhook/n8n/emojiSubmit', {
+            return fetch('https://175.178.29.106/webhook/n8n/emojiSubmit', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ url })
