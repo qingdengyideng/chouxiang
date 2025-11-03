@@ -1,0 +1,778 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover" />
+    <title>赛道网播放器</title>
+
+    <!-- hls.js -->
+    <script src="./static/js/hls.min.js"></script>
+    <script src="chouxiangjs.js"></script>
+    <!-- font (可选) -->
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;800&display=swap" rel="stylesheet">
+
+    <style>
+        :root{
+            --bg:#0b0b10;
+            --panel:#0f1116;
+            --accent:#7c5cff;
+            --muted:#9aa0ab;
+            --white:#ffffff;
+        }
+        *{box-sizing:border-box;font-family:Inter,system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial;}
+        html,body{height:100%;margin:0;background:linear-gradient(180deg,#2d2d3a 0%, #363741 100%);color:#e6e6e6;}
+        .container{
+            display:flex;
+            height:100vh;
+            gap:16px;
+            padding:20px;
+            align-items:stretch;
+        }
+
+        /* 遮罩层样式 */
+        .image-preview-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100vw;
+            height: 100vh;
+            background: rgba(0,0,0,0.8);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            z-index: 9999;
+        }
+
+        /* 图片容器 */
+        .image-preview-content img {
+            width: 100%;        /* 默认宽度100%撑满父容器 */
+            height: 100%;       /* 默认高度100%撑满父容器 */
+            max-width: 100vw;   /* 防止超过屏幕宽度 */
+            max-height: 100vh;  /* 防止超过屏幕高度 */
+            object-fit: contain; /* 保持比例缩放 */
+            border-radius: 0;
+            box-shadow: 0 0 20px rgba(0,0,0,0.3);
+            transition: transform 0.3s;
+        }
+
+        /* 左侧播放器区域（80%） */
+        .player-wrap{
+            flex:8;
+            position:relative;
+            border-radius:12px;
+            overflow:hidden;
+            background:#000;
+            box-shadow:0 10px 30px rgba(8,6,20,0.6);
+            display:flex;
+            align-items:center;
+            justify-content:center;
+        }
+        /* 背景封面虚化层 */
+        .bg-blur{
+            position:absolute;inset:0;background-size:cover;background-position:center;filter:blur(40px) saturate(1.1) contrast(0.95);
+            transform:scale(1.05);opacity:0.65;
+        }
+        /* 播放器视频 */
+        video#video{
+            width:100%;
+            height:100%;
+            object-fit:contain;
+            background:transparent;
+            position:relative; z-index:2;
+        }
+
+        /* 顶部主播卡 */
+        .host-card{
+            position:absolute;left:16px;top:16px;z-index:6;display:flex;align-items:center;gap:10px;
+            background:linear-gradient(90deg, rgba(0,0,0,0.45), rgba(255,255,255,0.02));
+            border-radius:999px;padding:6px 10px;backdrop-filter:blur(4px);border:1px solid rgba(255,255,255,0.04);
+            transition:transform .25s ease, box-shadow .25s ease;
+        }
+        .host-card:hover{transform:translateY(-4px);box-shadow:0 6px 18px rgba(124,92,255,0.09);}
+        .host-avatar{width:42px;height:42px;border-radius:50%;overflow:hidden;flex:0 0 42px;border:2px solid rgba(255,255,255,0.06)}
+        .host-avatar img{width:100%;height:100%;object-fit:cover;display:block;}
+        .host-info{display:flex;flex-direction:column;line-height:1}
+        .host-name{font-weight:600;font-size:14px}
+        .host-sub{font-size:12px;color:var(--muted)}
+
+        /* 中央提示（声音未打开 / 直播已结束） */
+        .center-overlay{
+            position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);z-index:7;
+            padding:16px 20px;border-radius:12px;background:rgba(0,0,0,0.55);backdrop-filter:blur(6px);text-align:center;
+            border:1px solid rgba(255,255,255,0.04);
+        }
+        .center-overlay.hidden{display:none}
+
+        /* 弹幕容器（覆盖在 video 上）  */
+        .danmaku-layer{
+            position:absolute;inset:0;pointer-events:none;z-index:5;overflow:hidden;
+        }
+        .danmaku-item{
+            position:absolute;white-space:nowrap;font-size:18px;font-weight:600;padding:6px 10px;border-radius:999px;
+            text-shadow:0 1px 2px rgba(0,0,0,0.6);transform:translateX(0);will-change:transform;
+            animation-timing-function: linear;
+        }
+        .danmaku-item img {
+            height: 24px;
+            vertical-align: middle;
+            margin: 0 2px;
+        }
+
+        /* 右侧弹幕列表（20%） */
+        .sidebar{
+            flex:2;
+            background:linear-gradient(180deg, rgba(255,255,255,0.02), rgba(0,0,0,0.06));
+            border-radius:12px;padding:12px;display:flex;flex-direction:column;gap:10px;min-width:260px;
+            box-shadow:0 6px 24px rgba(3,3,9,0.6);border:1px solid rgba(255,255,255,0.03);
+        }
+        .sidebar h3{margin:6px 0 4px 0;font-size:14px}
+        .comment-list{
+            flex:1;overflow:auto;padding:6px;border-radius:8px;background:linear-gradient(180deg, rgba(10,10,18,0.25), rgba(0,0,0,0.15));
+            border:1px solid rgba(255,255,255,0.02)
+        }
+
+        .comment-item {
+            display: grid;
+            grid-template-columns: auto 1fr;
+            column-gap: 0px;
+            align-items: start;
+            padding: 2px;
+            border-radius: 8px;
+            margin-bottom: 6px;
+            animation: fadeIn .28s ease;
+        }
+
+        .comment-item .nick,
+        .comment-item .saidaonick {
+            font-weight: 700;
+            font-size: 14px;
+            white-space: nowrap;
+            color: #c17a1a;
+        }
+
+        .comment-item .saidaonick {
+            color: #1a79c1;
+        }
+        .comment-item .msg {
+            font-size: 14px;
+            color: var(--white);
+            word-break: break-word;
+            white-space: normal;
+        }
+        .comment-item img {
+            height: 24px;
+            vertical-align: middle;
+            margin: 0 2px;
+        }
+        @keyframes fadeIn{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}
+
+        /* 控制按钮 */
+        .controls{display:flex;gap:8px;align-items:center;padding-top:6px;justify-content: space-between;}
+        .control-toggle{display:flex;gap:8px;align-items:center;justify-content:flex-start;margin:0;padding:8px;border-radius:10px;background:rgba(255,255,255,0.02);border:1px solid rgba(255,255,255,0.02)}
+        .switch{position:relative;width:46px;height:26px;border-radius:20px;background:rgba(255,255,255,0.06);cursor:pointer;flex-shrink:0}
+        .switch .knob{position:absolute;width:22px;height:22px;border-radius:50%;top:2px;left:2px;background:#fff;transition:left .18s ease;box-shadow:0 4px 12px rgba(11,9,24,0.4)}
+        .switch.on{background:linear-gradient(90deg,var(--accent),#4bb5ff)}
+        .switch.on .knob{left:22px}
+
+        .btn{
+            padding:10px 12px;border-radius:10px;
+            background: #6a72bd;
+            color: var(--d-text);
+            border:1px solid rgba(255,255,255,0.03);cursor:pointer;font-weight:600
+        }
+        /*.btn:hover{transform:translateY(-4px);transition:transform .18s}*/
+
+        /* 设备小屏适配 */
+        @media (max-width:900px){
+            .container{flex-direction:column;padding:12px}
+            .player-wrap{order:1;flex:unset;height:60vh}
+            .sidebar{order:2;width:100%;min-width:unset}
+        }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <div class="player-wrap" id="playerWrap">
+        <div class="bg-blur" id="bgBlur"></div>
+
+        <!-- video -->
+        <video id="video" playsinline webkit-playsinline controls></video>
+
+        <!-- danmaku overlay -->
+        <div class="danmaku-layer" id="danmakuLayer" aria-hidden="true"></div>
+
+        <!-- host info -->
+        <div class="host-card" id="hostCard">
+            <div class="host-avatar"><img id="hostAvatar" src="" alt="主播头像"></div>
+            <div class="host-info">
+                <div class="host-name" id="hostName">主播</div>
+<!--                <div class="host-sub" id="hostSub">UID: &#45;&#45;</div>-->
+            </div>
+        </div>
+
+        <!--	center overlay messages -->
+        <div class="center-overlay hidden" id="centerOverlay">
+            <div id="centerText">正在加载视频...</div>
+            <div style="margin-top:8px;font-size:12px;color:var(--muted)">按 P 可以打开声音</div>
+        </div>
+    </div>
+
+    <aside class="sidebar" aria-label="弹幕与评论">
+        <h3>弹幕 / 评论</h3>
+        <div class="comment-list" id="commentList">
+            <!-- comment items injected here -->
+        </div>
+
+        <div class="controls">
+            <div style="flex:1" class="control-toggle">
+                <div style="display:flex;flex-direction:column">
+                    <div style="font-weight:700">弹幕</div>
+                </div>
+                <div id="danmakuToggle" class="switch" role="switch" aria-checked="true">
+                    <div class="knob"></div>
+                </div>
+            </div>
+
+            <div style="width:10px"></div>
+
+            <div style="display:flex;align-items:center;gap:8px">
+                <button class="btn" id="openOrigBtn">去源站打开</button>
+            </div>
+        </div>
+
+    </aside>
+</div>
+
+<script>
+    /* ---------- 读取 URL 参数 ---------- */
+    async function getParamsByStrategy(params) {
+        const CHANNEL = params.channel || '';
+        const UID = params.uid || '';
+
+        // 必填参数检查
+        if (!UID) {
+            throw new Error('uid 参数是必填的');
+        }
+
+        // 策略映射
+        const strategies = {
+            weibo: async () => {
+                const data = await fetchWeiboLiveData(UID);
+                const item = data.item;
+                const streamInfo = item.stream_info;
+                const userInfo = data.user_info;
+                return {
+                    orig: `https://weibo.com/l/wblive/p/show/${item.live_id}`,
+                    status: item.status === 1 ? 1 : 0,
+                    m3u8: streamInfo.pull?.live_origin_hls_url || '',
+                    cover: replaceDomain(item.cover || ''),
+                    name: userInfo?.screen_name || userInfo?.name || '微博主播',
+                    avatar: replaceDomain(userInfo?.avatar_hd || userInfo?.avatar_large || userInfo?.profile_image_url || ''),
+                    uid: userInfo?.idstr || userInfo?.id || item.anchor_uid || '',
+                    mid: item.mid || '',
+                    channel: 'weibo',
+                    extra: {
+                        live_id: item.live_id,
+                        desc: item.desc || '',
+                        followers_count: userInfo?.followers_count || 0,
+                        verified: userInfo?.verified || false,
+                        verified_reason: userInfo?.verified_reason || ''
+                    }
+                };
+            },
+
+            xhs: () => ({
+                // orig: params.orig || '',
+                // status: (params.status === undefined) ? 1 : params.status,
+                // m3u8: params.m3u8 || 'http://live-source-play.xhscdn.com/live/569976773881672918.m3u8',
+                // cover: params.cover || 'https://sns-avatar-qc.xhscdn.com/avatar/1040g2jo31f9dmifllu5g5p61vchl6s0oi30pru8?imageView2/2/w/80/format/jpg',
+                // name: params.name || '主播',
+                // avatar: params.avatar || 'https://sns-avatar-qc.xhscdn.com/avatar/1040g2jo31f9dmifllu5g5p61vchl6s0oi30pru8?imageView2/2/w/80/format/jpg',
+                // uid: UID,
+                // channel: CHANNEL
+            }),
+
+            default: async () => {
+                try {
+                    const res = await fetch(`http://175.178.29.106:7004/player/info/${UID}`);
+                    const data = await res.json();
+
+                    return {
+                        orig: data.orig !== 'undefined' ? data.orig : '',
+                        status: Number(data.status) || 0,
+                        m3u8: data.m3u8 !== 'undefined' ? data.m3u8 : '',
+                        cover: data.cover || '',
+                        name: data.uname || '主播',
+                        avatar: data.avatar || '',
+                        uid: data.uid,
+                        channel: data.channel,
+                        mid: data.mid !== 'undefined' ? data.mid : ''
+                    };
+                } catch (err) {
+                    console.error('default strategy fetch error:', err);
+                }
+            }
+        };
+
+        const strategy = strategies[CHANNEL] || strategies.default;
+        return strategy();
+    }
+
+    const replaceDomain = (url) => {
+        if (!url) return '';
+        return url.replace(/https?:\/\/[^\/]+/, 'http://175.178.29.106/weibo/proxy');
+        // return 'https://corsproxy.io/?' + url
+    };
+
+    function fetchWeiboLiveData(liveId) {
+        return fetch(`https://corsproxy.io/?https://weibo.com/l/pc/anchor/live?live_id=${encodeURIComponent(liveId)}`)
+            .then(res => res.json())
+            .then(data => {
+                return data.data
+            })
+            ;
+    }
+
+    function handleWeiboData(data) {
+        console.log('收到数据:', data);
+    }
+
+    /* ---------- 读取 URL 参数 ---------- */
+    function getQueryParams() {
+        const q = {};
+        const search = location.search.replace(/^\?/, '');
+        if (!search) return q;
+        search.split('&').forEach(kv=>{
+            const [k,v] = kv.split('=');
+            try { q[decodeURIComponent(k)] = decodeURIComponent(v||''); } catch(e){}
+        });
+        return q;
+    }
+
+    const params = getQueryParams();
+
+    (async function() {
+        const params = getQueryParams();
+        const config = await getParamsByStrategy(params);
+
+        const ORIG = config.orig;
+        const STATUS = config.status;
+        const M3U8 = config.m3u8;
+        const COVER = config.cover;
+        const HOST_NAME = config.name;
+        const HOST_AVATAR = config.avatar;
+        const UID = config.uid;
+        const CHANNEL = config.channel;
+        const MID = config.mid;
+
+        // 在这里继续你的其他逻辑...
+        console.log('配置信息:', config);
+
+        /* ---------- 自动手机/平板重定向 ---------- */
+        function isMobileOrTablet() {
+            const ua = navigator.userAgent || '';
+            // 常见移动设备检测（简易）
+            return /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini|Mobile|Tablet/i.test(ua)
+                || Math.min(screen.width, screen.height) < 760;
+        }
+        if (isMobileOrTablet() && ORIG) {
+            // 直接重定向到原始页面
+            location.replace(ORIG);
+        }
+
+        /* ---------- DOM ---------- */
+        const video = document.getElementById('video');
+        const bgBlur = document.getElementById('bgBlur');
+        const hostNameEl = document.getElementById('hostName');
+        const hostAvatarEl = document.getElementById('hostAvatar');
+        const centerOverlay = document.getElementById('centerOverlay');
+        const centerText = document.getElementById('centerText');
+
+        const danmakuLayer = document.getElementById('danmakuLayer');
+        const commentList = document.getElementById('commentList');
+        const danmakuToggle = document.getElementById('danmakuToggle');
+        const openOrigBtn = document.getElementById('openOrigBtn');
+        const hostCard = document.getElementById('hostCard');
+
+        /* ---------- 初始化页面信息 ---------- */
+        if (COVER) {
+            bgBlur.style.backgroundImage = `url("${COVER}")`;
+        } else {
+            bgBlur.style.backgroundImage = `linear-gradient(90deg,#0b0b10,#15151b)`;
+        }
+        hostNameEl.textContent = HOST_NAME;
+        hostAvatarEl.src = HOST_AVATAR || 'data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64"></svg>';
+
+        openOrigBtn.addEventListener('click', ()=> {
+            if (ORIG) location.href = ORIG;
+        });
+        hostCard.addEventListener('click', ()=> {
+            if (ORIG) location.href = ORIG;
+        });
+
+        /* ---------- 弹幕开关（保存到 localStorage） ---------- */
+        const DANMAKU_KEY = 'player_danmaku_enabled_v1';
+        let danmakuEnabled = (localStorage.getItem(DANMAKU_KEY) !== 'false'); // 默认 true
+        function renderDanmakuToggle() {
+            if (danmakuEnabled) danmakuToggle.classList.add('on'), danmakuToggle.setAttribute('aria-checked','true');
+            else danmakuToggle.classList.remove('on'), danmakuToggle.setAttribute('aria-checked','false');
+        }
+        danmakuToggle.addEventListener('click', () => {
+            danmakuEnabled = !danmakuEnabled;
+            localStorage.setItem(DANMAKU_KEY, danmakuEnabled ? 'true' : 'false');
+            renderDanmakuToggle();
+            if (!danmakuEnabled) {
+                // 清屏弹幕
+                clearDanmakuVisuals();
+            }
+        });
+        renderDanmakuToggle();
+
+        /* ---------- 播放器加载 (hls.js 回退) ---------- */
+        async function setupPlayer() {
+            centerText.textContent = '正在加载视频...';
+            centerOverlay.classList.remove('hidden');
+
+            let triedPlay = false;
+            function showMutedHint() {
+                centerText.innerHTML = '<div style="font-size:18px;font-weight:700">声音未打开</div><div style="font-size:13px;color:var(--muted);margin-top:6px">按 P 可打开声音</div>';
+                centerOverlay.classList.remove('hidden');
+            }
+
+            if (M3U8) {
+                if (Hls.isSupported()) {
+                    const hls = new Hls({autoStartLoad:true});
+                    hls.loadSource(M3U8);
+                    hls.attachMedia(video);
+                    hls.on(Hls.Events.MANIFEST_PARSED, function() {
+                        attemptPlay();
+                    });
+                    hls.on(Hls.Events.ERROR, function(event, data) {
+                        console.warn('hls error', data);
+                    });
+                } else if (video.canPlayType('application/vnd.apple.mpegurl')) {
+                    video.src = M3U8;
+                    video.addEventListener('loadedmetadata', attemptPlay);
+                } else {
+                    centerText.textContent = '浏览器不支持播放 m3u8';
+                }
+            } else {
+                centerOverlay.classList.remove('hidden');
+                centerText.textContent = '未提供 m3u8 播放地址';
+            }
+
+            // 尝试播放并确保声音状态
+            async function attemptPlay() {
+                try {
+                    // 先尝试取消静音（大多数浏览器会阻止带声音的自动播放）
+                    video.muted = false;
+                    await video.play();
+                    centerOverlay.classList.add('hidden');
+                } catch (err) {
+                    // 播放被阻止或需要用户交互
+                    console.warn('autoplay failed:', err);
+                    // 尝试静音自动播放（多数浏览器允许静音自动播放）
+                    try {
+                        video.muted = true;
+                        await video.play();
+                        // 告知用户声音未打开（因被静音）
+                        showMutedHint();
+                    } catch (err2) {
+                        // 仍失败，提示
+                        showMutedHint();
+                    }
+                }
+            }
+
+            // 按 P 切换声音
+            window.addEventListener('keydown', (e) => {
+                if (e.key.toLowerCase() === 'p') {
+                    if (video.muted) {
+                        video.muted = false;
+                        // 尝试播放
+                        video.play().then(()=>centerOverlay.classList.add('hidden')).catch(()=>{/* ignore */});
+                    } else {
+                        video.muted = true;
+                        centerOverlay.classList.remove('hidden');
+                        centerText.textContent = '已静音，按 P 可打开声音';
+                    }
+                }
+            });
+
+            // 视频结束或状态=0 显示“直播已结束”
+            if (STATUS === 0) {
+                centerOverlay.classList.remove('hidden');
+                centerText.innerHTML = '<div style="font-size:18px;font-weight:800">直播已结束</div>';
+                // 禁止播放
+                try { video.pause(); } catch(e){}
+            }
+
+            // 当用户与视频交互（点击屏幕）时，隐藏中心提示
+            video.addEventListener('play', ()=> centerOverlay.classList.add('hidden'));
+            video.addEventListener('pause', ()=> {
+                if (STATUS === 1) centerOverlay.classList.remove('hidden');
+            });
+        }
+
+        /* ---------- 弹幕显示逻辑（轨道不重叠） ---------- */
+        const DANMAKU_TRACK_HEIGHT = 36; // 每条轨道高度
+        let tracks = []; // 存放每个轨道的到期时间（ms）
+        function ensureTracks() {
+            const h = danmakuLayer.clientHeight || (document.getElementById('playerWrap').clientHeight || 480);
+            const count = Math.max(2, Math.floor(h / DANMAKU_TRACK_HEIGHT));
+            if (tracks.length !== count) {
+                tracks = new Array(count).fill(0); // 表示轨道可用时间（时间戳 ms）
+            }
+        }
+
+        /* 清除弹幕显示 */
+        function clearDanmakuVisuals() {
+            danmakuLayer.innerHTML = '';
+            // 也清空轨道占用
+            tracks = tracks.map(()=>0);
+        }
+
+        function addCommentToList(item) {
+            const el = document.createElement('div');
+            el.className = 'comment-item';
+
+            // 是否赛道网
+            let isSaidaoWang = item.from === 'websocket';
+            let nickClassName = isSaidaoWang ? 'saidaonick' : 'nick';
+
+            const msg = document.createElement('div');
+            msg.className = 'msg';
+
+            // ✅ 将昵称单独高亮
+            const usernameSpan = `<span class="${nickClassName}">${item.username}：</span>`;
+            const messageText = item.message || '';
+
+            // ✅ 拼成最终HTML（昵称带样式）
+            if (isSaidaoWang) {
+                msg.innerHTML = usernameSpan + messageText.replace(/\[([^\]]+)\]/g, (match, emojiKey) => {
+                    return `<span class="emoji-placeholder" data-emoji-key="${emojiKey}"></span>`;
+                });
+            } else {
+                msg.innerHTML = usernameSpan + messageText;
+            }
+
+            el.appendChild(msg);
+            replaceImagePlaceholders(msg, getEmojiImageUrl, '.emoji-placeholder', 'player');
+
+            while (commentList.children.length > 200) {
+                commentList.removeChild(commentList.firstChild);
+            }
+
+            commentList.appendChild(el);
+            commentList.scrollTop = commentList.scrollHeight;
+
+            // 智能滚动
+            // const threshold = 300;
+            // const isAtBottom = commentList.scrollHeight - commentList.clientHeight - commentList.scrollTop <= threshold;
+            // if (isAtBottom) {
+            //
+            // }
+        }
+
+
+        /* 产生随机颜色（浅色或饱和色） */
+        function randomColor() {
+            // 生成 HSL 颜色，保证较亮/饱和以便在视频上可见
+            const h = Math.floor(Math.random() * 360);
+            const s = 60 + Math.floor(Math.random() * 30);
+            const l = 45 + Math.floor(Math.random() * 15);
+            return `hsl(${h} ${s}% ${l}%)`;
+        }
+
+        /* 在视频上显示弹幕，轨道选择避免重叠 */
+        function showDanmaku(item) {
+            if (!danmakuEnabled) return;
+            ensureTracks();
+            const now = Date.now();
+
+            // 找一个可用轨道
+            let trackIdx = -1;
+            for (let i = 0; i < tracks.length; i++) {
+                if (tracks[i] < now) {
+                    trackIdx = i;
+                    break;
+                }
+            }
+            if (trackIdx === -1) {
+                trackIdx = tracks.indexOf(Math.min(...tracks));
+            }
+
+            const node = document.createElement('div');
+            node.className = 'danmaku-item';
+            // 改用 innerHTML 来支持 img 等标签
+            node.innerHTML = item.message || '';
+
+            node.style.top = (trackIdx * DANMAKU_TRACK_HEIGHT + 10) + 'px';
+            node.style.right = '-10%';
+            node.style.color = item.from === 'websocket' ? randomColor() : 'hsl(0,0%,100%)';
+            node.style.fontSize = '18px';
+            danmakuLayer.appendChild(node);
+
+            const msgLen = node.textContent.length;
+            const baseDuration = 9000;
+            const duration = baseDuration + msgLen * 80;
+
+            tracks[trackIdx] = now + duration + 600;
+
+            node.style.transform = `translateX(0)`;
+            node.style.right = `-${node.offsetWidth}px`;
+
+            const layerWidth = danmakuLayer.clientWidth || danmakuLayer.offsetWidth || 800;
+            const startX = layerWidth;
+            const endX = -node.offsetWidth - 10;
+
+            node.style.transition = `transform ${duration}ms linear`;
+            node.style.transform = `translateX(${endX - startX}px)`;
+
+            setTimeout(() => {
+                if (node.parentNode) node.parentNode.removeChild(node);
+            }, duration + 200);
+        }
+
+
+        /* ---------- WebSocket 连接（接收服务端下发消息） ---------- */
+        let ws;
+        function setupWebSocket() {
+            try {
+                ws = new WebSocket('ws://175.178.29.106:8000/ws');
+            } catch (e) {
+                console.warn('WebSocket 初始化失败', e);
+                return;
+            }
+            ws.onopen = () => {
+                console.log('WS 已连接');
+                // 若需要鉴权或发送 uid 可在此发送
+                // ws.send(JSON.stringify({type:'subscribe',uid:UID}));
+            };
+            ws.onmessage = (ev) => {
+                try {
+                    const data = JSON.parse(ev.data);
+                    handleServerMessage(data);
+                } catch (e) {
+                    console.warn('WS 非 json 数据', ev.data);
+                }
+            };
+            ws.onclose = () => {
+                console.warn('WS 关闭，5s 后尝试重连');
+                setTimeout(setupWebSocket, 5000);
+            };
+            ws.onerror = (err) => {
+                console.warn('WS 错误', err);
+                try { ws.close(); } catch(e){}
+            };
+        }
+
+        /* 处理服务端消息 */
+        function handleServerMessage(data) {
+            if (!data) return;
+            // 兼容服务端下发的格式
+            if (data.type === 'message') {
+                const item = {
+                    id: data.id || (Date.now() + Math.random()),
+                    username: data.username || '游客',
+                    message: data.message || '',
+                    avatar: data.avatar || '',
+                    timeString: data.timeString || '',
+                    from: 'websocket'
+                };
+                // 添加到评论列表
+                addCommentToList(item);
+                if (danmakuEnabled) {
+                    showDanmaku(item);
+                }
+            } else {
+                // 其它 message types 可扩展
+                console.log('WS 接收到其他类型：', data.type, data);
+            }
+        }
+
+        function handleDanmuMessage(data) {
+            if (!data || !Array.isArray(data.comments)) return;
+
+            data.comments.forEach(comment => {
+                const item = {
+                    id: Date.now() + Math.random(),       // 唯一 id
+                    username: comment.user || '游客',     // 用户名
+                    message: comment.text || '',          // 评论内容（可包含 HTML）
+                    avatar: '',                           // 如果没有头像就空
+                    timeString: new Date().toLocaleTimeString(),
+                    from: comment.platform || 'unknown'   // 平台来源
+                };
+
+                // 添加到评论列表
+                addCommentToList(item);
+                if (danmakuEnabled) {
+                    showDanmaku(item);
+                }
+            });
+        }
+
+        // /* ---------- HTTP 轮询接口 ---------- */
+        async function startHttpPolling() {
+            // const strat = httpStrategies[CHANNEL] || httpStrategies.default;
+            const strat = httpStrategies.default;
+            await strat.fetchComments();
+        }
+
+        const proxies = [
+            'https://cors-anywhere.herokuapp.com/',
+            'https://api.allorigins.win/get?url=',
+            'https://thingproxy.freeboard.io/fetch/',
+            'https://corsproxy.io/?',
+            'https://cors-proxy.htmldriven.com/?url='
+        ];
+
+        const httpStrategies = {
+            weibo: { url: '',async fetchComments() {}},
+            xhs: {url: '', async fetchComments() {}},
+            default: { url:'', async fetchComments(){
+                    try {
+                        ws = new WebSocket('ws://175.178.29.106:7004/ws?uid=' + UID);
+                    } catch (e) {
+                        console.warn('WebSocket 初始化失败', e);
+                        return;
+                    }
+                    ws.onopen = () => {
+                        console.log('WS 已连接');
+                        // 若需要鉴权或发送 uid 可在此发送
+                        // ws.send(JSON.stringify({type:'subscribe',uid:UID}));
+                    };
+                    ws.onmessage = (ev) => {
+                        try {
+                            const data = JSON.parse(ev.data);
+                            handleDanmuMessage(data);
+                        } catch (e) {
+                            console.warn('WS 非 json 数据', ev.data);
+                        }
+                    };
+                    ws.onclose = () => {
+                        console.warn('WS 关闭，5s 后尝试重连');
+                        setTimeout(setupWebSocket, 5000);
+                    };
+                    ws.onerror = (err) => {
+                        console.warn('WS 错误', err);
+                        try { ws.close(); } catch(e){}
+                    };
+                } }
+        };
+
+        /* ---------- 启动 ---------- */
+        ensureTracks();
+        setupPlayer();
+        setupWebSocket();
+        startHttpPolling();
+
+        /* ---------- 处理窗口 resize（重建轨道） ---------- */
+        window.addEventListener('resize', ()=> { ensureTracks(); });
+
+    })();
+
+</script>
+</body>
+</html>
