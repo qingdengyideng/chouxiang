@@ -120,7 +120,7 @@ async function getEmojiImageUrl(emojiKey) {
         }
 
         // Step 2: 请求后端接口
-        const apiUrl = `https://guanxi.icu/webhook/queryByEmojiName?emojiName=${encodeURIComponent(emojiKey)}`;
+        const apiUrl = `https://175.178.29.106/webhook/queryByEmojiName?emojiName=${encodeURIComponent(emojiKey)}`;
         const response = await fetch(apiUrl);
         if (!response.ok) {
             console.error(`获取emoji接口失败: ${response.status}`);
